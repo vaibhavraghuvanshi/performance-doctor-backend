@@ -8,20 +8,20 @@ import helmet from "helmet";
 import { json } from "express";
 import rateLimit from "express-rate-limit";
 
+import {
+  getCorsOrigins,
+  getJsonLimit,
+  getPositiveInteger,
+} from "./config";
+import { checkDatabase } from "./db";
 import { errorHandler } from "./middleware/errorHandler";
 import { analyzeCode, analyzeCodeWithGroq } from "./analysis/analyzer";
-import {
-  postRegister,
-  postLogin,
-  getMe,
-  getHistoryList,
-  getHistoryOne,
-  postHistory,
-  deleteHistory,
-} from "./auth/authHandlers";
+import { createAuthHandlers } from "./auth/authHandlers";
 import { requireAuth, type AuthedRequest } from "./auth/middleware";
-
-const JSON_LIMIT = process.env.ANALYZE_JSON_LIMIT || "512kb";
+import {
+  PostgresAuthRepository,
+  type AuthRepository,
+} from "./auth/repository";
 
 function optionalAnalyzeApiKey(
   req: express.Request,
@@ -50,52 +50,104 @@ function optionalAnalyzeApiKey(
   next();
 }
 
+function requireAiAuthentication(
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
+) {
+  if (req.query.ai !== "1") return next();
+  return requireAuth(req as AuthedRequest, res, next);
+}
+
 const analyzeLimiter = rateLimit({
   windowMs: 60_000,
-  max: Number(process.env.ANALYZE_RATE_LIMIT_MAX || 40),
+  max: getPositiveInteger("ANALYZE_RATE_LIMIT_MAX", 40),
   standardHeaders: true,
   legacyHeaders: false,
 });
 
 const authLimiter = rateLimit({
   windowMs: 60_000,
-  max: Number(process.env.AUTH_RATE_LIMIT_MAX || 30),
+  max: getPositiveInteger("AUTH_RATE_LIMIT_MAX", 30),
   standardHeaders: true,
   legacyHeaders: false,
 });
 
-export function createApp(): express.Application {
-  const app = express();
+export interface AppOptions {
+  authRepository?: AuthRepository;
+  healthCheck?: () => Promise<void>;
+}
 
-  app.use(cors());
+export function createApp(options: AppOptions = {}): express.Application {
+  const app = express();
+  const auth = createAuthHandlers(
+    options.authRepository ?? new PostgresAuthRepository(),
+  );
+  const healthCheck = options.healthCheck ?? checkDatabase;
+  const allowedOrigins = getCorsOrigins();
+
+  app.set("trust proxy", 1);
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (
+          !origin ||
+          allowedOrigins.length === 0 ||
+          allowedOrigins.includes(origin.replace(/\/$/, ""))
+        ) {
+          callback(null, true);
+          return;
+        }
+        callback(null, false);
+      },
+    }),
+  );
   app.use(helmet());
-  app.use(json({ limit: JSON_LIMIT }));
+  app.use(json({ limit: getJsonLimit() }));
+
+  app.get("/health", async (_req, res) => {
+    try {
+      await healthCheck();
+      res.json({ status: "ok" });
+    } catch {
+      res.status(503).json({ status: "unavailable" });
+    }
+  });
 
   app.post("/auth/register", authLimiter, (req, res, next) => {
-    void postRegister(req, res, next);
+    void auth.postRegister(req, res, next);
   });
   app.post("/auth/login", authLimiter, (req, res, next) => {
-    void postLogin(req, res, next);
+    void auth.postLogin(req, res, next);
   });
-  app.get("/auth/me", requireAuth as express.RequestHandler, (req, res) => {
-    getMe(req as AuthedRequest, res);
+  app.get("/auth/me", requireAuth as express.RequestHandler, (req, res, next) => {
+    void auth.getMe(req as AuthedRequest, res, next);
   });
 
-  app.get("/history", requireAuth as express.RequestHandler, (req, res) => {
-    getHistoryList(req as AuthedRequest, res);
+  app.get("/history", requireAuth as express.RequestHandler, (req, res, next) => {
+    void auth.getHistoryList(req as AuthedRequest, res, next);
   });
-  app.get("/history/:id", requireAuth as express.RequestHandler, (req, res) => {
-    getHistoryOne(req as AuthedRequest, res);
-  });
+  app.get(
+    "/history/:id",
+    requireAuth as express.RequestHandler,
+    (req, res, next) => {
+      void auth.getHistoryOne(req as AuthedRequest, res, next);
+    },
+  );
   app.post("/history", requireAuth as express.RequestHandler, (req, res, next) => {
-    postHistory(req as AuthedRequest, res, next);
+    void auth.postHistory(req as AuthedRequest, res, next);
   });
-  app.delete("/history/:id", requireAuth as express.RequestHandler, (req, res) => {
-    deleteHistory(req as AuthedRequest, res);
-  });
+  app.delete(
+    "/history/:id",
+    requireAuth as express.RequestHandler,
+    (req, res, next) => {
+      void auth.deleteHistory(req as AuthedRequest, res, next);
+    },
+  );
 
   app.post(
     "/analyze",
+    requireAiAuthentication,
     analyzeLimiter,
     optionalAnalyzeApiKey,
     (req, res, next) => {

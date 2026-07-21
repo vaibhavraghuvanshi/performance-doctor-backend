@@ -27,7 +27,10 @@ export async function callGroq(
     );
     return response.choices[0].message.content ?? "";
   } catch (error) {
-    console.error("Groq API error:", error);
+    console.error(
+      "Groq API request failed",
+      process.env.NODE_ENV === "production" ? "" : error,
+    );
     throw new Error("Failed to fetch response from Groq API");
   }
 }

@@ -1,4 +1,4 @@
-import type { Issue } from "../../types/issue";
+import type { Issue } from "../types/analysis";
 
 export function estimateFPS(issues: Issue[]): {
   current: number;

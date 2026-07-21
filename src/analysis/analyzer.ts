@@ -24,7 +24,6 @@ import {
 import { parse } from "@babel/parser";
 import traverse from "@babel/traverse";
 import type { AnalysisResult, Issue } from "../types/analysis";
-import type { Issue as MetricsIssue } from "../../types/issue";
 import { mergeAstAndLlmIssues, pickTopBottleneckFromIssues } from "./mergeIssues";
 import { callGroq } from "../utils/groqClient";
 import { mapLlmIssuesToIssues } from "./mapLlmIssues";
@@ -69,7 +68,7 @@ export function analyzeCode(code: string): AnalysisResult {
   });
   finalizeMissingTitleIssue(nextHeadTracker, issues);
   // Metrics & scoring
-  const mi = issues as MetricsIssue[];
+  const mi = issues as Issue[];
   const fps = estimateFPS(mi);
   const renderTime = estimateRenderTime(mi);
   const memory = estimateMemory(mi);
@@ -339,10 +338,10 @@ ${code}
   try {
     console.log("[Groq] About to call Groq LLM...");
     const responseText = await callGroq(prompt);
-    console.log(
-      "[Groq] LLM response received (first 500 chars):",
-      responseText.slice(0, 500),
-    );
+    console.log("[Groq] LLM response received");
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[Groq] Response preview:", responseText.slice(0, 500));
+    }
 
     llmIssues = mapLlmIssuesToIssues(extractIssuesJSON(responseText));
 
@@ -361,7 +360,10 @@ ${code}
       optimizedCode = code;
     }
   } catch (err) {
-    console.error("[Groq] API error in analyzer:", err);
+    console.error(
+      "[Groq] API error in analyzer",
+      process.env.NODE_ENV === "production" ? "" : err,
+    );
     llmIssues = mapLlmIssuesToIssues([
       {
         title: "Groq API Error",
@@ -377,7 +379,7 @@ ${code}
     ? mergeAstAndLlmIssues(analyzeCode(code).issues as Issue[], llmIssues)
     : llmIssues;
 
-  const mi = issues as MetricsIssue[];
+  const mi = issues as Issue[];
   const fps = estimateFPS(mi);
   const renderTime = estimateRenderTime(mi);
   const memory = estimateMemory(mi);

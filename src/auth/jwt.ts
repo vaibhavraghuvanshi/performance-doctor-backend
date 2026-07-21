@@ -4,9 +4,9 @@ const ISS = "performance-doctor";
 
 function secret(): string {
   const s = process.env.JWT_SECRET?.trim();
-  if (s && s.length >= 16) return s;
+  if (s && s.length >= 32) return s;
   if (process.env.NODE_ENV === "production") {
-    throw new Error("JWT_SECRET must be set to a strong value (>=16 chars) in production");
+    throw new Error("JWT_SECRET must be set to a strong value (>=32 chars) in production");
   }
   return "dev-only-jwt-secret-change-me";
 }

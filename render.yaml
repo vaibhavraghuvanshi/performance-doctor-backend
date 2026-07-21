@@ -1,0 +1,37 @@
+databases:
+  - name: performance-doctor-db
+    databaseName: performance_doctor
+    user: performance_doctor
+    plan: free
+
+services:
+  - type: web
+    name: performance-doctor-api
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm test && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeployTrigger: checksPass
+    maxShutdownDelaySeconds: 30
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: performance-doctor-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: GROQ_API_KEY
+        sync: false
+      - key: ANALYZE_API_KEY
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: ANALYZE_RATE_LIMIT_MAX
+        value: "40"
+      - key: AUTH_RATE_LIMIT_MAX
+        value: "30"
+      - key: ANALYZE_JSON_LIMIT
+        value: 512kb

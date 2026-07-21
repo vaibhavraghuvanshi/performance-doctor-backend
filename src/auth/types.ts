@@ -18,11 +18,6 @@ export interface HistoryEntry {
   result: AnalysisResult;
 }
 
-export interface AuthStore {
-  users: StoredUser[];
-  history: HistoryEntry[];
-}
-
 export interface PublicUser {
   id: string;
   email: string;
