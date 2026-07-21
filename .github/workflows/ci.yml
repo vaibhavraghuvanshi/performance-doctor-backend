@@ -32,7 +32,7 @@ jobs:
             echo "Tracked environment files are not allowed."
             exit 1
           fi
-          if git grep -n -E '(gsk_|npg_)'; then
+          if git grep -n -E '(gsk_|npg_)' -- ':!.github/workflows/ci.yml'; then
             echo "A tracked file contains a production-looking secret."
             exit 1
           fi
